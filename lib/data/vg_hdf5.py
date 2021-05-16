@@ -62,6 +62,8 @@ class vg_hdf5(Dataset):
             v: k for k, v in self.json_category_id_to_contiguous_id.items()
         }
 
+        print(self.gt_classes[1], self.relationships[1])
+        exit()
 
     @property
     def coco(self):

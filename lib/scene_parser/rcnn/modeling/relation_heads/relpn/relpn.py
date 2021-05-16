@@ -89,7 +89,65 @@ class RelPN(nn.Module):
             # filter all matched_idxs < 0
             proposal_pairs = proposal_pairs[matched_idxs >= 0]
             matched_idxs = matched_idxs[matched_idxs >= 0]
+        print(torch.min(matched_idxs), torch.max(matched_idxs), matched_idxs)
+        matched_targets = target_pair[matched_idxs.clamp(min=0)]
+        matched_targets.add_field("matched_idxs", matched_idxs)
+        return matched_targets, proposal_pairs
+    
+    def match_targets_to_proposals2(self, proposal, target):
+        match_quality_matrix = boxlist_iou(target, proposal)
+        temp = []
+        target_box_pairs = []
+        for i in range(3):
+            for j in range(match_quality_matrix.shape[0]):
+                match_i = match_quality_matrix[0].view(-1, 1)
+                match_j = match_quality_matrix[j].view(1, -1)
+                match_ij = ((match_i + match_j) / 2)
+                # rmeove duplicate index
+                match_ij = match_ij.view(-1)
 
+                temp.append(match_ij)
+                boxi = target.bbox[0]; boxj = target.bbox[j]
+                box_pair = torch.cat((boxi, boxj), 0)
+                target_box_pairs.append(box_pair)
+
+        match_pair_quality_matrix = torch.stack(temp, 0).view(len(temp), -1)
+        target_box_pairs = torch.stack(target_box_pairs, 0)
+
+        box_subj = proposal.bbox
+        box_obj = proposal.bbox
+        box_subj = box_subj.unsqueeze(1).repeat(1, box_subj.shape[0], 1)
+        box_obj = box_obj.unsqueeze(0).repeat(box_obj.shape[0], 1, 1)
+        proposal_box_pairs = torch.cat((box_subj.view(-1, 4), box_obj.view(-1, 4)), 1)
+
+        idx_subj = torch.arange(box_subj.shape[0]).view(-1, 1, 1).repeat(1, box_obj.shape[0], 1).to(proposal.bbox.device)
+        idx_obj = torch.arange(box_obj.shape[0]).view(1, -1, 1).repeat(box_subj.shape[0], 1, 1).to(proposal.bbox.device)
+        proposal_idx_pairs = torch.cat((idx_subj.view(-1, 1), idx_obj.view(-1, 1)), 1)
+
+        # Target BoxPairList
+        target_pair = BoxPairList(target_box_pairs, target.size, target.mode)
+        target_pair.add_field("labels", target.get_field("pred_labels").view(-1))
+
+        # Proposal BoxPairList
+        proposal_pairs = BoxPairList(proposal_box_pairs, proposal.size, proposal.mode)
+        proposal_pairs.add_field("idx_pairs", proposal_idx_pairs)
+
+        # matched_idxs = self.proposal_matcher(match_quality_matrix)
+        matched_idxs = self.proposal_pair_matcher(match_pair_quality_matrix)
+
+        # Fast RCNN only need "labels" field for selecting the targets
+        # target = target.copy_with_fields("pred_labels")
+        # get the targets corresponding GT for each proposal
+        # NB: need to clamp the indices because we can have a single
+        # GT in the image, and matched_idxs can be -2, which goes
+        # out of bounds
+
+        if self.use_matched_pairs_only and \
+            (matched_idxs >= 0).sum() > self.minimal_matched_pairs:
+            # filter all matched_idxs < 0
+            proposal_pairs = proposal_pairs[matched_idxs >= 0]
+            matched_idxs = matched_idxs[matched_idxs >= 0]
+        # print(torch.min(matched_idxs), torch.max(matched_idxs), matched_idxs)
         matched_targets = target_pair[matched_idxs.clamp(min=0)]
         matched_targets.add_field("matched_idxs", matched_idxs)
         return matched_targets, proposal_pairs
@@ -98,23 +156,27 @@ class RelPN(nn.Module):
         labels = []
         proposal_pairs = []
         for proposals_per_image, targets_per_image in zip(proposals, targets):
-            matched_targets, proposal_pairs_per_image = self.match_targets_to_proposals(
+            # matched_targets, proposal_pairs_per_image = self.match_targets_to_proposals(
+            #     proposals_per_image, targets_per_image
+            # )
+            matched_targets, proposal_pairs_per_image = self.match_targets_to_proposals2(
                 proposals_per_image, targets_per_image
             )
 
             matched_idxs = matched_targets.get_field("matched_idxs")
-
+            # print(matched_idxs, matched_idxs.shape)
             labels_per_image = matched_targets.get_field("labels")
             labels_per_image = labels_per_image.to(dtype=torch.int64)
-
+            # print(torch.argmax(labels_per_image), labels_per_image[torch.argmax(labels_per_image)])
             # Label background (below the low threshold)
             bg_inds = matched_idxs == Matcher.BELOW_LOW_THRESHOLD
+            # print(bg_inds[torch.argmax(bg_inds)])
             labels_per_image[bg_inds] = 0
-
+            # print(torch.argmax(labels_per_image), labels_per_image[torch.argmax(labels_per_image)])
             # Label ignore proposals (between low and high thresholds)
             ignore_inds = matched_idxs == Matcher.BETWEEN_THRESHOLDS
             labels_per_image[ignore_inds] = -1  # -1 is ignored by sampler
-
+            # print(torch.argmax(labels_per_image))
             # compute regression targets
             # regression_targets_per_image = self.box_coder.encode(
             #     matched_targets.bbox, proposals_per_image.bbox
@@ -187,7 +249,6 @@ class RelPN(nn.Module):
             # neg_labels = torch.zeros(len(neg_inds_img.nonzero()))
             # rellabels = torch.cat((pos_labels, neg_labels), 0).view(-1, 1)
             # losses += F.binary_cross_entropy(relness, rellabels.to(relness.device))
-            print('realness', relness.view(-1, 1).size())
             losses += F.binary_cross_entropy(relness.view(-1, 1), (labels[img_idx] > 0).view(-1, 1).float())
 
         # distributed sampled proposals, that were obtained on all feature maps

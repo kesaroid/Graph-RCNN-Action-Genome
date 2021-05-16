@@ -3,6 +3,7 @@ from .voc import voc_evaluation
 from .sg import sg_evaluation
 
 from ..vg_hdf5 import vg_hdf5
+from ..ag_hdf5 import ag_hdf5
 
 def evaluate(dataset, predictions, output_folder, **kwargs):
     """evaluate dataset using different methods based on dataset type.
@@ -21,6 +22,11 @@ def evaluate(dataset, predictions, output_folder, **kwargs):
             dataset=dataset, predictions=predictions, output_folder=output_folder, **kwargs
         )
         # return voc_evaluation(**args)
+        return coco_evaluation(**args)
+    elif isinstance(dataset, ag_hdf5):
+        args = dict(
+            dataset=dataset, predictions=predictions, output_folder=output_folder, **kwargs
+        )
         return coco_evaluation(**args)
     else:
         dataset_name = dataset.__class__.__name__

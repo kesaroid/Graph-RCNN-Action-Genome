@@ -22,7 +22,7 @@ class ag_hdf5(Dataset):
         assert os.path.exists(self.root), "Cannot find the Action Genome dataset at {}".format(self.root)
         self.roidb_file = os.path.join(self.root, 'annotations', 'COCO')
         self.image_file = os.path.join(self.root, 'frames') 
-        dataset_path = "action_genome_train_v3graph_v2.json" if self.split == 'train' else "action_genome_val_v3graph_v2.json" 
+        dataset_path = "AG-train.json" if self.split == 'train' else "AG-test.json" 
         self.ag = COCO(os.path.join(self.roidb_file, dataset_path))
         self.image_index = list(sorted(self.ag.imgs.keys()))
         self.filter_duplicate_rels = filter_duplicate_rels and self.split == 'train'

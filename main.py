@@ -44,7 +44,7 @@ def test(cfg, args, model=None):
 def main():
     ''' parse config file '''
     parser = argparse.ArgumentParser(description="Scene Graph Generation")
-    parser.add_argument("--config-file", default="configs/sgg_res101_joint_ag.yaml")
+    parser.add_argument("--config-file", default="configs/faster_rcnn_res101.yaml")
     parser.add_argument("--local_rank", type=int, default=0)
     parser.add_argument("--session", type=int, default=0)
     parser.add_argument("--resume", type=int, default=0)
